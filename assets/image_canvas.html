@@ -188,25 +188,88 @@
         .pasted-text-container:hover .delete-btn {
             display: flex;
         }
+
+        #zoom-controls {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 10px 15px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            z-index: 1001;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            font-size: 14px;
+            color: #333;
+        }
+
+        #zoom-slider {
+            width: 120px;
+            cursor: pointer;
+        }
+
+        #zoom-level {
+            min-width: 45px;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
+        #content-wrapper {
+            width: 100%;
+            height: 100%;
+            transform-origin: 0 0;
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+        }
+
+        #content-wrapper > * {
+            pointer-events: auto;
+        }
     </style>
 </head>
 <body>
 
     <div id="instructions">直接按 Ctrl+V (或 Cmd+V) 粘贴图片或文字</div>
     <button id="clear-btn">清空画布</button>
-    <div id="canvas"></div>
+    
+    <div id="zoom-controls">
+        <span>缩小</span>
+        <input type="range" id="zoom-slider" min="0.1" max="3" step="0.1" value="1">
+        <span>放大</span>
+        <span id="zoom-level">100%</span>
+    </div>
+
+    <div id="canvas">
+        <div id="content-wrapper"></div>
+    </div>
 
     <script>
         const canvas = document.getElementById('canvas');
+        const contentWrapper = document.getElementById('content-wrapper');
         const instructions = document.getElementById('instructions');
         const clearBtn = document.getElementById('clear-btn');
+        const zoomSlider = document.getElementById('zoom-slider');
+        const zoomLevelText = document.getElementById('zoom-level');
+        
         let zIndexCounter = 1;
+        let currentZoom = 1;
+
+        // 缩放控制
+        zoomSlider.oninput = () => {
+            currentZoom = parseFloat(zoomSlider.value);
+            contentWrapper.style.transform = `scale(${currentZoom})`;
+            zoomLevelText.textContent = Math.round(currentZoom * 100) + '%';
+        };
 
         // 清空画布功能
         clearBtn.onclick = () => {
-            if (canvas.children.length > 0) {
+            if (contentWrapper.children.length > 0) {
                 if (confirm('是否清空画布上的所有内容？')) {
-                    canvas.innerHTML = '';
+                    contentWrapper.innerHTML = '';
                     instructions.style.opacity = '1';
                     zIndexCounter = 1;
                 }
@@ -291,7 +354,7 @@
             container.appendChild(img);
             container.appendChild(handleBR);
             container.appendChild(handleTL);
-            canvas.appendChild(container);
+            contentWrapper.appendChild(container);
 
             makeResizable(container, handleBR, 'br');
             makeResizable(container, handleTL, 'tl');
@@ -302,7 +365,7 @@
             const content = document.createElement('div');
             content.textContent = text;
             container.appendChild(content);
-            canvas.appendChild(container);
+            contentWrapper.appendChild(container);
         }
 
         function makeResizable(el, handle, type) {
@@ -324,18 +387,14 @@
                 if (!isResizing) return;
                 
                 if (type === 'br') {
-                    const newWidth = startWidth + (e.clientX - startX);
+                    const newWidth = startWidth + (e.clientX - startX) / currentZoom;
                     if (newWidth > 50) {
                         el.style.width = newWidth + 'px';
                     }
                 } else if (type === 'tl') {
-                    const diffX = startX - e.clientX;
+                    const diffX = (startX - e.clientX) / currentZoom;
                     const newWidth = startWidth + diffX;
                     if (newWidth > 50) {
-                        // 因为是等比例，宽度变化量 diffX
-                        // 对应的 left 偏移就是 -diffX
-                        // 对应的 top 偏移需要根据比例计算，但浏览器 img height:auto 会自动处理显示
-                        // 我们只需要同步调整 container 的位置
                         const ratio = el.offsetHeight / el.offsetWidth;
                         const diffY = diffX * ratio;
                         
@@ -353,16 +412,17 @@
 
         function makeDraggable(el) {
             let isDragging = false;
-            let offset = { x: 0, y: 0 };
+            let startMouseX, startMouseY, startLeft, startTop;
 
             el.addEventListener('mousedown', function(e) {
                 isDragging = true;
                 // 点击时置顶
                 el.style.zIndex = zIndexCounter++;
                 
-                const rect = el.getBoundingClientRect();
-                offset.x = e.clientX - rect.left;
-                offset.y = e.clientY - rect.top;
+                startMouseX = e.clientX;
+                startMouseY = e.clientY;
+                startLeft = parseFloat(el.style.left) || 0;
+                startTop = parseFloat(el.style.top) || 0;
                 
                 el.style.transition = 'none';
                 e.preventDefault();
@@ -371,11 +431,11 @@
             document.addEventListener('mousemove', function(e) {
                 if (!isDragging) return;
                 
-                const x = e.clientX - offset.x;
-                const y = e.clientY - offset.y;
+                const dx = (e.clientX - startMouseX) / currentZoom;
+                const dy = (e.clientY - startMouseY) / currentZoom;
                 
-                el.style.left = x + 'px';
-                el.style.top = y + 'px';
+                el.style.left = (startLeft + dx) + 'px';
+                el.style.top = (startTop + dy) + 'px';
             });
 
             document.addEventListener('mouseup', function() {
